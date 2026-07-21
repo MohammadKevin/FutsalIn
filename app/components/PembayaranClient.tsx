@@ -34,7 +34,14 @@ function PembayaranForm() {
 
   const [paid, setPaid] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [bookingCode] = useState(generateBookingCode);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(bookingCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const handlePay = () => {
     setLoading(true);
@@ -58,8 +65,12 @@ function PembayaranForm() {
           <h1 className="success-title">Pembayaran Berhasil!</h1>
           <p className="success-subtitle">Booking lapangan futsal Anda telah dikonfirmasi.</p>
 
-          <div className="success-booking-code">
-            <span className="sbc-label">Kode Booking</span>
+          <div 
+            className="success-booking-code" 
+            onClick={handleCopy}
+            title="Klik untuk menyalin"
+          >
+            <span className="sbc-label">{copied ? "Berhasil Disalin!" : "Kode Booking (Klik untuk Salin)"}</span>
             <span className="sbc-code">{bookingCode}</span>
           </div>
 

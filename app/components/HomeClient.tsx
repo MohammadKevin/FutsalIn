@@ -6,6 +6,7 @@ import { useState } from "react";
 export default function HomeClient() {
   const router = useRouter();
   const [activeTestimonial, setActiveTestimonial] = useState(0);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const testimonials = [
     {
@@ -70,12 +71,66 @@ export default function HomeClient() {
         <div className="logo">
           Futsal<span>In</span>
         </div>
-        <button className="burger-btn" aria-label="Menu">
+        <button 
+          className={`burger-btn ${isMenuOpen ? "active" : ""}`} 
+          onClick={() => setIsMenuOpen(!isMenuOpen)} 
+          aria-label="Menu"
+        >
           <span></span>
           <span></span>
           <span></span>
         </button>
       </nav>
+
+      {/* ===== MOBILE NAV DRAWER ===== */}
+      <div className={`nav-drawer ${isMenuOpen ? "open" : ""}`}>
+        <div className="nav-drawer-links">
+          <a 
+            href="#courts-section" 
+            className="nav-drawer-link" 
+            onClick={(e) => { 
+              e.preventDefault(); 
+              setIsMenuOpen(false); 
+              handleScroll(); 
+            }}
+          >
+            Pilih Lapangan
+          </a>
+          <a 
+            href="#facilities-section" 
+            className="nav-drawer-link" 
+            onClick={(e) => { 
+              e.preventDefault(); 
+              setIsMenuOpen(false); 
+              document.getElementById("facilities-section")?.scrollIntoView({ behavior: "smooth" });
+            }}
+          >
+            Fasilitas
+          </a>
+          <a 
+            href="#testimonial-section" 
+            className="nav-drawer-link" 
+            onClick={(e) => { 
+              e.preventDefault(); 
+              setIsMenuOpen(false); 
+              document.getElementById("testimonial-section")?.scrollIntoView({ behavior: "smooth" });
+            }}
+          >
+            Testimoni
+          </a>
+          <button 
+            onClick={() => { 
+              setIsMenuOpen(false); 
+              handleScroll(); 
+            }} 
+            className="btn-gold" 
+            style={{ marginTop: "1.5rem", width: "100%" }}
+          >
+            BOOKING SEKARANG
+          </button>
+        </div>
+      </div>
+      <div className={`nav-drawer-overlay ${isMenuOpen ? "open" : ""}`} onClick={() => setIsMenuOpen(false)} />
 
       {/* ===== SOCIAL SIDEBAR ===== */}
       <div className="social-sidebar">
@@ -213,7 +268,7 @@ export default function HomeClient() {
       </section>
 
       {/* ===== FACILITIES SECTION ===== */}
-      <section className="facilities-section">
+      <section id="facilities-section" className="facilities-section">
         <div className="facilities-images">
           <div className="fac-img">
             <img 
@@ -252,7 +307,7 @@ export default function HomeClient() {
       </section>
 
       {/* ===== TESTIMONIAL SECTION ===== */}
-      <section className="testimonial-section">
+      <section id="testimonial-section" className="testimonial-section">
         <div className="testimonial-bg" />
         <div className="testimonial-content">
           <div className="quote-mark">&ldquo;</div>
