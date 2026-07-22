@@ -73,7 +73,18 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   voucher_code TEXT,
   status TEXT DEFAULT 'PENDING_PAYMENT' CHECK (status IN ('PENDING_PAYMENT', 'PAID', 'CANCELLED')),
   created_at TIMESTAMPTZ DEFAULT NOW()
-);`;
+);
+
+-- RLS POLICIES FOR SUPABASE
+ALTER TABLE public.courts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public courts selection policy" ON public.courts FOR SELECT USING (true);
+CREATE POLICY "Public courts insertion policy" ON public.courts FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public courts update policy" ON public.courts FOR UPDATE USING (true);
+CREATE POLICY "Public bookings insertion policy" ON public.bookings FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public bookings selection policy" ON public.bookings FOR SELECT USING (true);
+CREATE POLICY "Public bookings update policy" ON public.bookings FOR UPDATE USING (true);`;
 
 export default function AdminClient() {
   const router = useRouter();
@@ -148,10 +159,24 @@ export default function AdminClient() {
     }
   };
 
-  const handleToggleCourtStatus = (id: number) => {
+  const handleToggleCourtStatus = async (id: number) => {
+    const court = courts.find((c) => c.id === id);
+    if (!court) return;
+    const newStatus = !court.isActive;
+
     setCourts((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, isActive: !c.isActive } : c))
+      prev.map((c) => (c.id === id ? { ...c, isActive: newStatus } : c))
     );
+
+    try {
+      await fetch("/api/courts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, isActive: newStatus }),
+      });
+    } catch (err) {
+      console.error("Error toggling court status:", err);
+    }
   };
 
   const handleAddCourt = async (e: React.FormEvent) => {
@@ -710,12 +735,55 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here`}
               {/* SECTION 2: VISUAL & MEDIA */}
               <div className="form-section">
                 <div className="section-header-pill">🖼️ MEDIA & GAMBAR ARENA</div>
+                
                 <div className="form-group-full">
-                  <label className="form-label">URL Gambar Arena Lapangan</label>
+                  <label className="form-label">Upload Foto Lapangan dari Komputer / HP (Lokal)</label>
+                  <div className="file-upload-dropzone">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      id="court-file-input"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            if (event.target?.result) {
+                              setNewCourtImage(event.target.result as string);
+                            }
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="hidden-file-input"
+                    />
+                    <label htmlFor="court-file-input" className="file-upload-btn-label">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                      <span>📁 Klik untuk Upload Foto dari File Lokal</span>
+                    </label>
+                  </div>
+
+                  {newCourtImage && (
+                    <div className="image-preview-card">
+                      <div className="ipc-img-wrap">
+                        <img src={newCourtImage} alt="Preview Foto Arena" />
+                      </div>
+                      <div className="ipc-info">
+                        <span className="ipc-title">Preview Foto Arena Lapangan:</span>
+                        <span className="ipc-sub">
+                          {newCourtImage.startsWith("data:") ? "✓ Foto Berhasil Diunggah dari File Lokal" : newCourtImage}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-group-full" style={{ marginTop: "1rem" }}>
+                  <label className="form-label">Atau Gunakan URL Gambar / Preset Preset:</label>
                   <input
                     type="text"
                     placeholder="/img/sintetis.jpg atau URL Gambar HTTPS"
-                    value={newCourtImage}
+                    value={newCourtImage.startsWith("data:") ? "[Foto Ter-upload dari File Lokal]" : newCourtImage}
                     onChange={(e) => setNewCourtImage(e.target.value)}
                     className="form-input-pro"
                   />

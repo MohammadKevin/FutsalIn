@@ -66,6 +66,35 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (court.isActive === false) {
+      return NextResponse.json(
+        { success: false, message: `Lapangan "${court.name}" sedang dalam pemeliharaan (maintenance) dan tidak dapat dipesan.` },
+        { status: 400 }
+      );
+    }
+
+    // Double-booking check
+    const existingBookings = await getAllBookings();
+    const conflictSlots = slots.filter((slot: string) => {
+      return existingBookings.some(
+        (b) =>
+          b.courtId === Number(courtId) &&
+          b.date === date &&
+          b.status !== "CANCELLED" &&
+          b.slots.includes(slot)
+      );
+    });
+
+    if (conflictSlots.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Slot jam ${conflictSlots.join(", ")} sudah dipesan oleh pemesan lain untuk tanggal ini. Silakan pilih slot lain.`,
+        },
+        { status: 400 }
+      );
+    }
+
     // Calculations
     const subtotalCourt = slots.length * court.price;
     let subtotalAddons = 0;
@@ -93,7 +122,9 @@ export async function POST(req: NextRequest) {
       const cleanCode = String(voucherCode).trim().toUpperCase();
       const promo = PROMO_RULES[cleanCode];
       if (promo) {
-        if (promo.type === "percent") {
+        if (promo.minTotal && grossTotal < promo.minTotal) {
+          discountAmount = 0;
+        } else if (promo.type === "percent") {
           discountAmount = Math.round((grossTotal * promo.value) / 100);
         } else {
           discountAmount = Math.min(promo.value, grossTotal);

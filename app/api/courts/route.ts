@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { getAllCourts, createCourt } from "@/app/lib/bookingStore";
+import { getAllCourts, createCourt, updateCourtActive } from "@/app/lib/bookingStore";
 
 export async function GET() {
   const courts = await getAllCourts();
@@ -55,6 +55,39 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       { success: false, message: "Gagal menambahkan lapangan baru." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { id, isActive } = body;
+
+    if (id === undefined || isActive === undefined) {
+      return NextResponse.json(
+        { success: false, message: "ID lapangan dan status aktif wajib diisi." },
+        { status: 400 }
+      );
+    }
+
+    const updated = await updateCourtActive(Number(id), Boolean(isActive));
+    if (!updated) {
+      return NextResponse.json(
+        { success: false, message: "Lapangan tidak ditemukan." },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: updated,
+      message: `Status lapangan ${updated.name} berhasil diperbarui.`,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, message: "Gagal memperbarui status lapangan." },
       { status: 500 }
     );
   }

@@ -1,4 +1,31 @@
+import fs from "fs";
+import path from "path";
 import { supabase, isSupabaseConfigured } from "./supabase";
+
+const CACHE_FILE = path.join(process.cwd(), ".bookings_cache.json");
+
+function loadDiskCache(): BookingRecord[] {
+  try {
+    if (typeof window === "undefined" && fs.existsSync(CACHE_FILE)) {
+      const raw = fs.readFileSync(CACHE_FILE, "utf8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // Ignore
+  }
+  return [];
+}
+
+function saveDiskCache(bookings: BookingRecord[]) {
+  try {
+    if (typeof window === "undefined") {
+      fs.writeFileSync(CACHE_FILE, JSON.stringify(bookings, null, 2), "utf8");
+    }
+  } catch {
+    // Ignore
+  }
+}
 
 export interface CourtData {
   id: number;
@@ -215,7 +242,48 @@ export async function createCourt(data: Omit<CourtData, "id">): Promise<CourtDat
   return newCourt;
 }
 
+export async function updateCourtActive(id: number, isActive: boolean): Promise<CourtData | null> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data: updated, error } = await supabase
+        .from("courts")
+        .update({ is_active: isActive })
+        .eq("id", id)
+        .select()
+        .single();
+
+      if (!error && updated) {
+        return {
+          id: Number(updated.id),
+          name: updated.name,
+          floor: updated.floor,
+          size: updated.size,
+          price: Number(updated.price),
+          image: updated.image,
+          tagline: updated.tagline || "",
+          description: updated.description || "",
+          features: updated.features || [],
+          recommendedFor: updated.recommended_for || "",
+          lighting: updated.lighting || "",
+          isActive: updated.is_active !== false,
+        };
+      }
+    } catch {
+      // Fallback
+    }
+  }
+
+  const court = COURTS_DATA.find((c) => c.id === id);
+  if (court) {
+    court.isActive = isActive;
+    return court;
+  }
+  return null;
+}
+
 export async function getAllBookings(): Promise<BookingRecord[]> {
+  let supabaseBookings: BookingRecord[] = [];
+
   if (isSupabaseConfigured && supabase) {
     try {
       const { data, error } = await supabase
@@ -224,7 +292,7 @@ export async function getAllBookings(): Promise<BookingRecord[]> {
         .order("created_at", { ascending: false });
 
       if (!error && data) {
-        return data.map((b: any) => ({
+        supabaseBookings = data.map((b: any) => ({
           id: b.id,
           bookingCode: b.booking_code,
           courtId: Number(b.court_id),
@@ -248,18 +316,31 @@ export async function getAllBookings(): Promise<BookingRecord[]> {
       // Fallback
     }
   }
-  return bookingsDb.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const diskBookings = loadDiskCache();
+  const map = new Map<string, BookingRecord>();
+
+  bookingsDb.forEach((b) => map.set(b.bookingCode.toUpperCase(), b));
+  diskBookings.forEach((b) => map.set(b.bookingCode.toUpperCase(), b));
+  supabaseBookings.forEach((b) => map.set(b.bookingCode.toUpperCase(), b));
+
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
 }
 
 export async function getBookingByCode(code: string): Promise<BookingRecord | undefined> {
+  const cleanCode = code.trim().toUpperCase();
   const bookings = await getAllBookings();
-  return bookings.find((b) => b.bookingCode.toUpperCase() === code.toUpperCase());
+  return bookings.find((b) => b.bookingCode.toUpperCase() === cleanCode);
 }
 
 export async function createBooking(data: Omit<BookingRecord, "id" | "bookingCode" | "status" | "createdAt">): Promise<BookingRecord> {
   const randomStr = Math.random().toString(36).substring(2, 8).toUpperCase();
   const bookingCode = `FSI-${randomStr}`;
   const nowIso = new Date().toISOString();
+
+  let createdRecord: BookingRecord | null = null;
 
   if (isSupabaseConfigured && supabase) {
     try {
@@ -288,7 +369,7 @@ export async function createBooking(data: Omit<BookingRecord, "id" | "bookingCod
         .single();
 
       if (!error && inserted) {
-        return {
+        createdRecord = {
           id: inserted.id,
           bookingCode: inserted.booking_code,
           courtId: Number(inserted.court_id),
@@ -313,7 +394,7 @@ export async function createBooking(data: Omit<BookingRecord, "id" | "bookingCod
     }
   }
 
-  const newBooking: BookingRecord = {
+  const fallbackBooking: BookingRecord = createdRecord || {
     ...data,
     id: `b-${Date.now()}`,
     bookingCode,
@@ -321,22 +402,38 @@ export async function createBooking(data: Omit<BookingRecord, "id" | "bookingCod
     createdAt: nowIso,
   };
 
-  bookingsDb.unshift(newBooking);
-  return newBooking;
+  // Sync memory DB & disk cache
+  const existingIdx = bookingsDb.findIndex((b) => b.bookingCode.toUpperCase() === bookingCode.toUpperCase());
+  if (existingIdx >= 0) {
+    bookingsDb[existingIdx] = fallbackBooking;
+  } else {
+    bookingsDb.unshift(fallbackBooking);
+  }
+  saveDiskCache(bookingsDb);
+
+  return fallbackBooking;
 }
 
 export async function updateBookingStatus(code: string, status: "PAID" | "CANCELLED"): Promise<BookingRecord | null> {
+  const cleanCode = code.trim().toUpperCase();
+
+  // Sync memory DB
+  const localBooking = bookingsDb.find((b) => b.bookingCode.toUpperCase() === cleanCode);
+  if (localBooking) {
+    localBooking.status = status;
+  }
+
   if (isSupabaseConfigured && supabase) {
     try {
       const { data: updated, error } = await supabase
         .from("bookings")
         .update({ status })
-        .eq("booking_code", code)
+        .eq("booking_code", cleanCode)
         .select()
         .single();
 
       if (!error && updated) {
-        return {
+        const record = {
           id: updated.id,
           bookingCode: updated.booking_code,
           courtId: Number(updated.court_id),
@@ -355,16 +452,14 @@ export async function updateBookingStatus(code: string, status: "PAID" | "CANCEL
           status: updated.status,
           createdAt: updated.created_at,
         };
+        saveDiskCache(bookingsDb);
+        return record;
       }
     } catch {
       // Fallback
     }
   }
 
-  const booking = bookingsDb.find((b) => b.bookingCode.toUpperCase() === code.toUpperCase());
-  if (booking) {
-    booking.status = status;
-    return booking;
-  }
-  return null;
+  saveDiskCache(bookingsDb);
+  return localBooking || null;
 }

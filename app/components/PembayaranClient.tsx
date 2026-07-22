@@ -47,18 +47,49 @@ function PembayaranForm() {
   const handlePay = async () => {
     setLoading(true);
     try {
-      await fetch("/api/bookings", {
+      const res = await fetch("/api/bookings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: bookingCode, status: "PAID" }),
       });
+      const data = await res.json();
+      if (data.success || res.ok) {
+        setPaid(true);
+      } else {
+        // Fallback for demo code
+        setPaid(true);
+      }
     } catch {
-      // Ignore fallback errors
-    }
-    setTimeout(() => {
-      setLoading(false);
       setPaid(true);
-    }, 1800);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const [playerCount, setPlayerCount] = useState(10);
+  const [copiedWa, setCopiedWa] = useState(false);
+
+  const handleCopyWaSplitBill = () => {
+    const perPerson = Math.ceil(total / (playerCount || 10));
+    const text = `⚽ *PATUNGAN FUTSAL - FUTSALIN* ⚽
+----------------------------------------
+📌 *Arena:* ${court.name}
+🗓️ *Tanggal:* ${date ? new Date(date).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "-"}
+⏰ *Jam Bermain:* ${slotList.join(", ")}
+🎫 *Kode Booking:* ${bookingCode}
+----------------------------------------
+💰 *Total Biaya:* ${formatRupiah(total)}
+👥 *Jumlah Pemain:* ${playerCount} Orang
+👉 *PATUNGAN PER ORANG: ${formatRupiah(perPerson)}*
+----------------------------------------
+Silakan transfer / bayar patungan ke:
+👤 Kapten/Pemesan: *${name}*
+
+_Booking via FutsalIn - Main Futsal Tanpa Rebutan Jadwal!_`;
+
+    navigator.clipboard.writeText(text);
+    setCopiedWa(true);
+    setTimeout(() => setCopiedWa(false), 2000);
   };
 
   /* ===== HALAMAN SUKSES ===== */
@@ -101,7 +132,49 @@ function PembayaranForm() {
             </div>
           </div>
 
-          <p className="success-note">
+          {/* SPLIT BILL CALCULATOR */}
+          <div className="split-bill-card">
+            <div className="sb-title">
+              <span>⚽ Kalkulator Patungan Tim</span>
+            </div>
+            <div className="sb-controls">
+              <span style={{ fontSize: "0.82rem", color: "var(--color-text-secondary)" }}>Jumlah Pemain:</span>
+              <div className="sb-counter">
+                <button
+                  type="button"
+                  className="sb-btn"
+                  onClick={() => setPlayerCount((p) => Math.max(2, p - 1))}
+                >
+                  -
+                </button>
+                <span style={{ fontWeight: "800", color: "#fff" }}>{playerCount} Orang</span>
+                <button
+                  type="button"
+                  className="sb-btn"
+                  onClick={() => setPlayerCount((p) => Math.min(20, p + 1))}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            <div className="sb-result-box">
+              <div>
+                <div style={{ fontSize: "0.72rem", color: "var(--color-text-secondary)" }}>Patungan per Orang:</div>
+                <div className="sb-per-person">
+                  {formatRupiah(Math.ceil(total / playerCount))}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-copy-wa"
+                onClick={handleCopyWaSplitBill}
+              >
+                {copiedWa ? "✓ Tersalin!" : "💬 Salin Rincian ke WA"}
+              </button>
+            </div>
+          </div>
+
+          <p className="success-note" style={{ marginTop: "1rem" }}>
             Detail booking telah dikirim ke <strong>{email}</strong> dan nomor WhatsApp <strong>{phone}</strong>.
           </p>
 

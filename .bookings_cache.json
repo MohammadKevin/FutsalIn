@@ -1,0 +1,72 @@
+[
+  {
+    "courtId": 1,
+    "courtName": "Lapangan Standar Interlock",
+    "date": "2026-07-22",
+    "slots": [
+      "11:00"
+    ],
+    "name": "Mohammad Kevin Arif Rudianto",
+    "phone": "0987654345",
+    "email": "kvn4.200581@gmail.com",
+    "addons": [
+      "Rompi Tanding (2 Warna)"
+    ],
+    "subtotalCourt": 150000,
+    "subtotalAddons": 0,
+    "discountAmount": 0,
+    "totalPrice": 150000,
+    "id": "b-1784693563105",
+    "bookingCode": "FSI-ACE64X",
+    "status": "PAID",
+    "createdAt": "2026-07-22T04:12:42.700Z"
+  },
+  {
+    "id": "b-101",
+    "bookingCode": "FSI-DEMO01",
+    "courtId": 1,
+    "courtName": "Lapangan Standar Interlock",
+    "date": "2026-07-22",
+    "slots": [
+      "19:00",
+      "20:00"
+    ],
+    "name": "Rizky Pratama",
+    "phone": "081298765432",
+    "email": "rizky@example.com",
+    "addons": [
+      "Rompi Tanding (2 Warna)"
+    ],
+    "subtotalCourt": 300000,
+    "subtotalAddons": 0,
+    "discountAmount": 30000,
+    "totalPrice": 270000,
+    "voucherCode": "FUTSALIN10",
+    "status": "PAID",
+    "createdAt": "2026-07-22T02:12:00.487Z"
+  },
+  {
+    "id": "b-102",
+    "bookingCode": "FSI-DEMO02",
+    "courtId": 2,
+    "courtName": "Lapangan Vinyl Deluxe",
+    "date": "2026-07-22",
+    "slots": [
+      "15:00"
+    ],
+    "name": "Budi Santoso",
+    "phone": "081345678901",
+    "email": "budi@example.com",
+    "addons": [
+      "Sewa Sepatu Futsal",
+      "Air Mineral Cold Pack"
+    ],
+    "subtotalCourt": 200000,
+    "subtotalAddons": 45000,
+    "discountAmount": 20000,
+    "totalPrice": 225000,
+    "voucherCode": "MAINMALAM",
+    "status": "PENDING_PAYMENT",
+    "createdAt": "2026-07-22T03:42:00.487Z"
+  }
+]

@@ -15,6 +15,7 @@ interface Court {
   features: string[];
   recommendedFor: string;
   lighting: string;
+  isActive?: boolean;
 }
 
 const DEFAULT_COURTS: Court[] = [
@@ -89,10 +90,10 @@ const addonOptions: AddonItem[] = [
   { id: "water", name: "Air Mineral Cold Pack", price: 30000, unit: "dus (24 botol)", icon: "🥤", description: "Dingin & siap di pinggir lapangan" },
 ];
 
-const PROMO_CODES: Record<string, { type: "percent" | "fixed"; value: number; label: string }> = {
+const PROMO_CODES: Record<string, { type: "percent" | "fixed"; value: number; label: string; minTotal?: number }> = {
   FUTSALIN10: { type: "percent", value: 10, label: "Diskon 10% Spesial" },
-  MAINMALAM: { type: "fixed", value: 20000, label: "Potongan Rp 20.000 Prime Time" },
-  FIRSTMATCH: { type: "fixed", value: 25000, label: "Diskon Member Baru Rp 25.000" },
+  MAINMALAM: { type: "fixed", value: 20000, label: "Potongan Rp 20.000 Prime Time", minTotal: 100000 },
+  FIRSTMATCH: { type: "fixed", value: 25000, label: "Diskon Member Baru Rp 25.000", minTotal: 120000 },
 };
 
 function BookingForm() {
@@ -113,9 +114,10 @@ function BookingForm() {
       })
       .catch(() => {});
   }, []);
-  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
   const [sessionFilter, setSessionFilter] = useState<"all" | "pagi" | "siang" | "malam">("all");
+  const [serverBookedSlots, setServerBookedSlots] = useState<string[]>([]);
   
   // Add-ons
   const [selectedAddons, setSelectedAddons] = useState<Record<string, boolean>>({
@@ -140,6 +142,9 @@ function BookingForm() {
   // Modal court view
   const [modalCourt, setModalCourt] = useState<Court | null>(null);
 
+  // Split bill counter
+  const [playerCount, setPlayerCount] = useState(10);
+
   // Dates computation
   const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
   const tomorrowStr = useMemo(() => {
@@ -157,8 +162,31 @@ function BookingForm() {
     setSelectedSlots([]);
   }, [selectedCourt, selectedDate]);
 
+  useEffect(() => {
+    if (!selectedDate) return;
+    fetch("/api/bookings")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && Array.isArray(data.data)) {
+          const bookedForCourtAndDate = data.data
+            .filter(
+              (b: any) =>
+                b.courtId === selectedCourt &&
+                b.date === selectedDate &&
+                b.status !== "CANCELLED"
+            )
+            .flatMap((b: any) => b.slots || []);
+          setServerBookedSlots(bookedForCourtAndDate);
+        }
+      })
+      .catch(() => {});
+  }, [selectedCourt, selectedDate]);
+
   const court = courts.find((c) => c.id === selectedCourt) || courts[0];
-  const booked = bookedSlots[selectedCourt] || [];
+  const staticBooked = selectedDate === todayStr ? (bookedSlots[selectedCourt] || []) : [];
+  const booked = useMemo(() => {
+    return Array.from(new Set([...staticBooked, ...serverBookedSlots]));
+  }, [staticBooked, serverBookedSlots]);
 
   const toggleSlot = (slot: string) => {
     if (booked.includes(slot)) return;
@@ -199,6 +227,9 @@ function BookingForm() {
     if (!appliedVoucher) return 0;
     const rule = PROMO_CODES[appliedVoucher.code];
     if (!rule) return 0;
+    if (rule.minTotal && grossTotal < rule.minTotal) {
+      return 0;
+    }
     if (rule.type === "percent") {
       return Math.round((grossTotal * rule.value) / 100);
     }
@@ -265,7 +296,7 @@ function BookingForm() {
     return timeSlots;
   }, [sessionFilter]);
 
-  const isFormComplete = selectedCourt && selectedDate && selectedSlots.length > 0 && name.trim() && phone.trim() && email.trim();
+  const isFormComplete = selectedCourt && court?.isActive !== false && selectedDate && selectedSlots.length > 0 && name.trim() && phone.trim() && email.trim();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -273,6 +304,10 @@ function BookingForm() {
 
     if (!selectedCourt) {
       setError("Mohon pilih lapangan.");
+      return;
+    }
+    if (court && court.isActive === false) {
+      setError(`Lapangan "${court.name}" sedang dalam pemeliharaan (maintenance) dan tidak dapat dipesan.`);
       return;
     }
     if (!selectedDate) {
@@ -310,7 +345,12 @@ function BookingForm() {
       const data = await res.json();
       setSubmitting(false);
 
-      const bookingCode = data.success && data.data ? data.data.bookingCode : `FSI-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+      if (!data.success) {
+        setError(data.message || "Gagal membuat reservasi. Silakan periksa kembali data Anda.");
+        return;
+      }
+
+      const bookingCode = data.data ? data.data.bookingCode : `FSI-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
       const params = new URLSearchParams({
         code: bookingCode,
@@ -320,7 +360,7 @@ function BookingForm() {
         name,
         phone,
         email,
-        total: String(data.success && data.data ? data.data.totalPrice : totalPrice),
+        total: String(data.data ? data.data.totalPrice : totalPrice),
         addons: activeAddonsList.join("; "),
         discount: String(discountAmount),
         voucher: appliedVoucher ? appliedVoucher.code : "",
@@ -328,19 +368,7 @@ function BookingForm() {
       router.push(`/pembayaran?${params.toString()}`);
     } catch {
       setSubmitting(false);
-      const params = new URLSearchParams({
-        court: String(selectedCourt),
-        date: selectedDate,
-        slots: selectedSlots.join(","),
-        name,
-        phone,
-        email,
-        total: String(totalPrice),
-        addons: activeAddonsList.join("; "),
-        discount: String(discountAmount),
-        voucher: appliedVoucher ? appliedVoucher.code : "",
-      });
-      router.push(`/pembayaran?${params.toString()}`);
+      setError("Terjadi kesalahan koneksi. Silakan coba lagi.");
     }
   };
 
@@ -391,20 +419,39 @@ function BookingForm() {
             <div className="court-selector-grid">
               {courts.map((c) => {
                 const isSelected = selectedCourt === c.id;
+                const isMaintenance = c.isActive === false;
                 return (
                   <div
                     key={c.id}
-                    className={`court-select-card ${isSelected ? "selected" : ""}`}
-                    onClick={() => setSelectedCourt(c.id)}
+                    className={`court-select-card ${isSelected ? "selected" : ""} ${isMaintenance ? "in-maintenance" : ""}`}
+                    onClick={() => {
+                      setSelectedCourt(c.id);
+                      if (isMaintenance) {
+                        setError(`Lapangan "${c.name}" sedang dalam pemeliharaan (maintenance) dan tidak dapat dipesan.`);
+                      } else {
+                        setError("");
+                      }
+                    }}
                   >
                     <div className="court-card-image-wrap">
                       <img src={c.image} alt={c.name} className="court-select-img" />
-                      {isSelected && (
+                      {isSelected && !isMaintenance && (
                         <div className="court-select-check">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><polyline points="20 6 9 17 4 12"/></svg>
                         </div>
                       )}
-                      <div className="court-badge-tag">{c.floor}</div>
+                      {isMaintenance ? (
+                        <>
+                          <div className="court-badge-tag maintenance">🔧 Pemeliharaan</div>
+                          <div className="court-card-maintenance-overlay">
+                            <span className="ccm-icon">🔒</span>
+                            <span className="ccm-badge">TUTUP / MAINTENANCE</span>
+                            <span className="ccm-sub">Sedang Dalam Perbaikan</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="court-badge-tag">{c.floor}</div>
+                      )}
                     </div>
 
                     <div className="court-select-info">
@@ -434,6 +481,15 @@ function BookingForm() {
                 );
               })}
             </div>
+
+            {court?.isActive === false && (
+              <div className="maintenance-notice-bar animate-fade-in-up">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span>
+                  <strong>Lapangan sedang dalam Pemeliharaan (Maintenance).</strong> Silakan pilih arena lapangan lain yang tersedia.
+                </span>
+              </div>
+            )}
           </div>
 
           {/* 2. Date Selector */}
@@ -497,95 +553,122 @@ function BookingForm() {
               <div className="form-section-label">
                 <span className="section-badge">3</span> Pilih Slot Jam Bermain
               </div>
-              <div className="slot-legend">
-                <span className="legend-item available">Tersedia</span>
-                <span className="legend-item booked">Terisi</span>
-                <span className="legend-item picked">Dipilih</span>
-              </div>
+              {court?.isActive !== false && (
+                <div className="slot-legend">
+                  <span className="legend-item available">Tersedia</span>
+                  <span className="legend-item booked">Terisi</span>
+                  <span className="legend-item picked">Dipilih</span>
+                </div>
+              )}
             </div>
 
-            {/* Session Tabs & Helpers */}
-            <div className="session-bar">
-              <div className="session-tabs">
+            {court?.isActive === false ? (
+              <div className="maintenance-block-card animate-fade-in-up">
+                <div className="mbc-icon">🛠️</div>
+                <h3 className="mbc-title">LAPANGAN SEDANG DALAM PEMELIHARAAN (MAINTENANCE)</h3>
+                <p className="mbc-desc">
+                  Arena <strong>{court.name}</strong> sedang dalam perbaikan dan perawatan fasilitas oleh tim teknis kami. Pemesanan slot jam untuk arena ini sementara <strong>DIBLOKIR</strong>.
+                </p>
                 <button
                   type="button"
-                  className={`session-tab ${sessionFilter === "all" ? "active" : ""}`}
-                  onClick={() => setSessionFilter("all")}
+                  className="btn-gold"
+                  onClick={() => {
+                    const availableCourt = courts.find((c) => c.isActive !== false);
+                    if (availableCourt) {
+                      setSelectedCourt(availableCourt.id);
+                      setError("");
+                    }
+                  }}
                 >
-                  Semua Jam
-                </button>
-                <button
-                  type="button"
-                  className={`session-tab ${sessionFilter === "pagi" ? "active" : ""}`}
-                  onClick={() => setSessionFilter("pagi")}
-                >
-                  🌅 Pagi (08-12)
-                </button>
-                <button
-                  type="button"
-                  className={`session-tab ${sessionFilter === "siang" ? "active" : ""}`}
-                  onClick={() => setSessionFilter("siang")}
-                >
-                  ☀️ Siang (13-17)
-                </button>
-                <button
-                  type="button"
-                  className={`session-tab ${sessionFilter === "malam" ? "active" : ""}`}
-                  onClick={() => setSessionFilter("malam")}
-                >
-                  🌙 Malam Prime Time (18-21)
+                  PILIH LAPANGAN LAIN YANG TERSEDIA
                 </button>
               </div>
+            ) : (
+              <>
+                {/* Session Tabs & Helpers */}
+                <div className="session-bar">
+                  <div className="session-tabs">
+                    <button
+                      type="button"
+                      className={`session-tab ${sessionFilter === "all" ? "active" : ""}`}
+                      onClick={() => setSessionFilter("all")}
+                    >
+                      Semua Jam
+                    </button>
+                    <button
+                      type="button"
+                      className={`session-tab ${sessionFilter === "pagi" ? "active" : ""}`}
+                      onClick={() => setSessionFilter("pagi")}
+                    >
+                      🌅 Pagi (08-12)
+                    </button>
+                    <button
+                      type="button"
+                      className={`session-tab ${sessionFilter === "siang" ? "active" : ""}`}
+                      onClick={() => setSessionFilter("siang")}
+                    >
+                      ☀️ Siang (13-17)
+                    </button>
+                    <button
+                      type="button"
+                      className={`session-tab ${sessionFilter === "malam" ? "active" : ""}`}
+                      onClick={() => setSessionFilter("malam")}
+                    >
+                      🌙 Malam Prime Time (18-21)
+                    </button>
+                  </div>
 
-              <div className="slot-helper-actions">
-                <button
-                  type="button"
-                  onClick={selectTwoConsecutiveSlots}
-                  className="btn-slot-quick"
-                  title="Pilih otomatis 2 jam berurutan yang tersedia"
-                >
-                  ⚡ Pilih 2 Jam Langsung
-                </button>
-                {selectedSlots.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedSlots([])}
-                    className="btn-slot-clear"
-                  >
-                    Reset Slot ({selectedSlots.length})
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="slots-grid">
-              {filteredTimeSlots.map((slot) => {
-                const isBooked = booked.includes(slot);
-                const isSelected = selectedSlots.includes(slot);
-                const isPrimeTime = parseInt(slot) >= 18;
-
-                return (
-                  <button
-                    key={slot}
-                    type="button"
-                    disabled={isBooked}
-                    onClick={() => toggleSlot(slot)}
-                    className={`slot-btn ${isBooked ? "booked" : ""} ${isSelected ? "picked" : ""} ${isPrimeTime ? "prime-time" : ""}`}
-                  >
-                    <span className="slot-time-text">{slot}</span>
-                    {isBooked ? (
-                      <span className="slot-status">Terisi</span>
-                    ) : isSelected ? (
-                      <span className="slot-status">Dipilih ✓</span>
-                    ) : isPrimeTime ? (
-                      <span className="slot-badge-prime">Prime Time</span>
-                    ) : (
-                      <span className="slot-status">Tersedia</span>
+                  <div className="slot-helper-actions">
+                    <button
+                      type="button"
+                      onClick={selectTwoConsecutiveSlots}
+                      className="btn-slot-quick"
+                      title="Pilih otomatis 2 jam berurutan yang tersedia"
+                    >
+                      ⚡ Pilih 2 Jam Langsung
+                    </button>
+                    {selectedSlots.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSlots([])}
+                        className="btn-slot-clear"
+                      >
+                        Reset Slot ({selectedSlots.length})
+                      </button>
                     )}
-                  </button>
-                );
-              })}
-            </div>
+                  </div>
+                </div>
+
+                <div className="slots-grid">
+                  {filteredTimeSlots.map((slot) => {
+                    const isBooked = booked.includes(slot);
+                    const isSelected = selectedSlots.includes(slot);
+                    const isPrimeTime = parseInt(slot) >= 18;
+
+                    return (
+                      <button
+                        key={slot}
+                        type="button"
+                        disabled={isBooked}
+                        onClick={() => toggleSlot(slot)}
+                        className={`slot-btn ${isBooked ? "booked" : ""} ${isSelected ? "picked" : ""} ${isPrimeTime ? "prime-time" : ""}`}
+                      >
+                        <span className="slot-time-text">{slot}</span>
+                        {isBooked ? (
+                          <span className="slot-status">Terisi</span>
+                        ) : isSelected ? (
+                          <span className="slot-status">Dipilih ✓</span>
+                        ) : isPrimeTime ? (
+                          <span className="slot-badge-prime">Prime Time</span>
+                        ) : (
+                          <span className="slot-status">Tersedia</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
 
           {/* 4. Equipment & Addons Rental */}
@@ -800,6 +883,40 @@ function BookingForm() {
                 <span className="total-highlight">{formatRupiah(totalPrice)}</span>
               </div>
             </div>
+
+            {totalPrice > 0 && (
+              <div className="split-bill-card">
+                <div className="sb-title">
+                  <span>⚽ Estimasi Patungan Tim</span>
+                </div>
+                <div className="sb-controls">
+                  <span style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)" }}>Pemain:</span>
+                  <div className="sb-counter">
+                    <button
+                      type="button"
+                      className="sb-btn"
+                      onClick={() => setPlayerCount((p) => Math.max(2, p - 1))}
+                    >
+                      -
+                    </button>
+                    <span style={{ fontWeight: "800", color: "#fff", fontSize: "0.88rem" }}>{playerCount} Orang</span>
+                    <button
+                      type="button"
+                      className="sb-btn"
+                      onClick={() => setPlayerCount((p) => Math.min(20, p + 1))}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.6rem" }}>
+                  <span style={{ fontSize: "0.78rem", color: "var(--color-text-secondary)" }}>Per Pemain:</span>
+                  <span style={{ fontWeight: "900", color: "var(--color-green-neon)", fontSize: "1.05rem" }}>
+                    {formatRupiah(Math.ceil(totalPrice / playerCount))}
+                  </span>
+                </div>
+              </div>
+            )}
 
             <button
               type="submit"

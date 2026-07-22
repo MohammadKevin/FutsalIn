@@ -97,6 +97,8 @@ ALTER TABLE public.courts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.bookings ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Public courts selection policy" ON public.courts FOR SELECT USING (true);
+CREATE POLICY "Public courts insertion policy" ON public.courts FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public courts update policy" ON public.courts FOR UPDATE USING (true);
 CREATE POLICY "Public bookings insertion policy" ON public.bookings FOR INSERT WITH CHECK (true);
 CREATE POLICY "Public bookings selection policy" ON public.bookings FOR SELECT USING (true);
 CREATE POLICY "Public bookings update policy" ON public.bookings FOR UPDATE USING (true);
