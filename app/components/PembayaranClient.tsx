@@ -32,10 +32,11 @@ function PembayaranForm() {
   const court = courts.find((c) => c.id === courtId) || courts[0];
   const slotList = slots ? slots.split(",") : [];
 
+  const codeParam = searchParams.get("code");
   const [paid, setPaid] = useState(false);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [bookingCode] = useState(generateBookingCode);
+  const [bookingCode] = useState(() => codeParam || generateBookingCode());
 
   const handleCopy = () => {
     navigator.clipboard.writeText(bookingCode);
@@ -43,12 +44,21 @@ function PembayaranForm() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handlePay = () => {
+  const handlePay = async () => {
     setLoading(true);
+    try {
+      await fetch("/api/bookings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: bookingCode, status: "PAID" }),
+      });
+    } catch {
+      // Ignore fallback errors
+    }
     setTimeout(() => {
       setLoading(false);
       setPaid(true);
-    }, 2200);
+    }, 1800);
   };
 
   /* ===== HALAMAN SUKSES ===== */
